@@ -9,9 +9,13 @@ if( !file_exists( __DIR__ . '/cacert.pem' ) )
 	exit( 1 );
 }
 
-if( $argc === 2 )
+// Pass env ACCOUNTID, get it from salien page source code called 'gAccountID'
+$AccountID = isset( $_SERVER[ 'ACCOUNTID' ] ) ? (int)$_SERVER[ 'ACCOUNTID' ] : 0;
+
+if( $argc > 1 )
 {
 	$Token = $argv[ 1 ];
+	$AccountID = $argv[ 2 ];
 }
 else if( isset( $_SERVER[ 'TOKEN' ] ) )
 {
@@ -31,6 +35,9 @@ else
 	else if( isset( $ParsedToken[ 'token' ] ) )
 	{
 		$Token = $ParsedToken[ 'token' ];
+		$AccountID = GetAccountID( $ParsedToken[ 'steamid' ] );
+
+		Msg( 'Your SteamID is ' . $ParsedToken[ 'steamid' ] . ' - AccountID is ' . $AccountID );
 	}
 
 	unset( $ParsedToken );
@@ -42,8 +49,7 @@ if( strlen( $Token ) !== 32 )
 	exit( 1 );
 }
 
-// Pass env ACCOUNTID, get it from salien page source code called 'gAccountID'
-$AccountID = isset( $_SERVER[ 'ACCOUNTID' ] ) ? (int)$_SERVER[ 'ACCOUNTID' ] : 0;
+$Verbose = isset( $_SERVER[ 'VERBOSE' ] ) ? (bool)$_SERVER[ 'VERBOSE' ] : 0;
 
 if( isset( $_SERVER[ 'IGNORE_UPDATES' ] ) && (bool)$_SERVER[ 'IGNORE_UPDATES' ] )
 {
@@ -195,7 +201,10 @@ do
 				continue;
 			}
 
-			usort( $Data[ 'response' ][ 'boss_status' ][ 'boss_players' ], function( $a, $b ) use ( $AccountID )
+			// Strip names down to basic ASCII.
+			$RegMask = '/[\x00-\x1F\x7F-\xFF]/';
+
+			usort( $Data[ 'response' ][ 'boss_status' ][ 'boss_players' ], function( $a, $b ) use ( $AccountID, $RegMask )
 			{
 				if( $a[ 'accountid' ] == $AccountID )
 				{
@@ -206,28 +215,32 @@ do
 					return -1;
 				}
 
-				if( $b[ 'xp_earned' ] == $a[ 'xp_earned' ] )
-				{
-					return $b[ 'hp' ] - $a[ 'hp' ];
-				}
 
-				return $b[ 'xp_earned' ] - $a[ 'xp_earned' ];
+				return strcmp( preg_replace( $RegMask, '', $a['name'] ), preg_replace( $RegMask, '', $b['name'] ) );
 			} );
 
 			foreach( $Data[ 'response' ][ 'boss_status' ][ 'boss_players' ] as $Player )
 			{
+				$DefaultColor = ( $Player[ 'accountid' ] == $AccountID ? '{green}' : '{normal}' );
+
 				Msg(
 					( $Player[ 'accountid' ] == $AccountID ? '{green}@@' : '  ' ) .
-					' Player %9d - HP: %6s / %6s - Score: %10s',
+					' %-20s - HP: {yellow}%6s' . $DefaultColor  . ' / %6s - Score Gained: {yellow}%10s' . $DefaultColor .
+					( $Verbose ? ' - Start: %10s (L%2d) - Current: %10s (' . ($Player[ 'level_on_join' ] != $Player[ 'new_level' ] ? '{lightred}' : '') . 'L%2d' . $DefaultColor . ')' : '' ),
 					PHP_EOL,
 					[
-						$Player[ 'accountid' ],
+						substr( preg_replace( $RegMask, '', $Player[ 'name' ] ), 0, 20 ),
 						$Player[ 'hp' ],
 						$Player[ 'max_hp' ],
-						number_format( $Player[ 'xp_earned' ] )
+						number_format( $Player[ 'xp_earned' ] ),
+						number_format( $Player[ 'score_on_join' ] ),
+						$Player[ 'level_on_join' ],
+						number_format( $Player[ 'score_on_join' ] + $Player[ 'xp_earned' ] ),
+						$Player[ 'new_level' ]
 					]
 				);
 			}
+
 
 			if( $Data[ 'response' ][ 'game_over' ] )
 			{
@@ -261,7 +274,7 @@ do
 	// Rescan planets if joining failed
 	if( empty( $Zone[ 'response' ][ 'zone_info' ] ) )
 	{
-  		// Bug
+		// Bug
 		if( isset( $BestPlanetAndZone[ 'best_zone' ][ 'difficulty' ] ) )
 		{
 			Msg( '{lightred} ----- Bug: Start -----' );
@@ -280,7 +293,7 @@ do
 			while( $stillBug );
 		}
 		// Bug
-    
+		
 		Msg( '{lightred}!! Failed to join a zone, rescanning and restarting...' );
 
 		$BestPlanetAndZone = 0;
@@ -512,6 +525,12 @@ function GetPlanetState( $Planet, &$ZonePaces, $WaitTime )
 		if( $Zone[ 'type' ] == 4 && $Zone[ 'boss_active' ] )
 		{
 			$BossZones[] = $Zone;
+		}
+
+		// Skip zone 0 if it's not a boss and has no capture progress, since it's currently not allowing joins on new planets.
+		if ( $Zone[ 'zone_position' ] == 0 && $Zone[ 'capture_progress' ] == 0 )
+		{
+			continue;
 		}
 
 		$Cutoff = $Zone[ 'difficulty' ] < 2 ? 0.90 : 0.99;
@@ -947,6 +966,20 @@ function GetRepositoryScriptHash( &$RepositoryScriptETag, $LocalScriptHash )
 	}
 
 	return strlen( $Data ) > 0 ? sha1( trim( $Data ) ) : $LocalScriptHash;
+}
+
+function GetAccountID( $SteamID )
+{
+	if( PHP_INT_SIZE === 8 )
+	{
+		return $SteamID & 0xFFFFFFFF;
+	}
+	else if( function_exists( 'gmp_and' ) )
+	{
+		return gmp_and( $SteamID, '0xFFFFFFFF' );
+	}
+
+	return 0;
 }
 
 function Msg( $Message, $EOL = PHP_EOL, $printf = [] )
