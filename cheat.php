@@ -202,16 +202,16 @@ do
 
 		do
 		{
+			$Time = microtime( true );
 			$UseHeal = 0;
-			$DamageToBoss = $WaitingForPlayers ? 0 : 1;
+			// Do more damage in hopes of getting a harder boss next time
+			$DamageToBoss = $WaitingForPlayers ? 0 : mt_rand( 1, 40 );
 			$DamageTaken = 0;
 
-			if( microtime( true ) >= $NextHeal )
+			if( $Time >= $NextHeal )
 			{
 				$UseHeal = 1;
-				$NextHeal = microtime( true ) + 120;
-
-				Msg( '{teal}@@ Using heal ability' );
+				$NextHeal = $Time + 120;
 			}
 
 			$Data = SendPOST( 'ITerritoryControlMinigameService/ReportBossDamage', 'access_token=' . $Token . '&use_heal_ability=' . $UseHeal . '&damage_to_boss=' . $DamageToBoss . '&damage_taken=' . $DamageTaken );
@@ -245,7 +245,7 @@ do
 			else if( $WaitingForPlayers )
 			{
 				$WaitingForPlayers = false;
-				$NextHeal = microtime( true ) + mt_rand( 0, 120 );
+				$NextHeal = $Time + mt_rand( 0, 120 );
 			}
 
 			if( empty( $Data[ 'response' ][ 'boss_status' ] ) )
@@ -317,6 +317,8 @@ do
 
 			Msg( '@@ Boss HP: {green}' . number_format( $Data[ 'response' ][ 'boss_status' ][ 'boss_hp' ] ) . '{normal} / {lightred}' .  number_format( $Data[ 'response' ][ 'boss_status' ][ 'boss_max_hp' ] ) . '{normal} - Lasers: {yellow}' . $Data[ 'response' ][ 'num_laser_uses' ] . '{normal} - Team Heals: {green}' . $Data[ 'response' ][ 'num_team_heals' ] );
 
+			Msg( '{yellow}@@ Damage sent: {green}' . $DamageToBoss . '{yellow} - ' . ( $UseHeal ? '{green}Used heal ability!' : 'Next heal in {green}' . round( $NextHeal - $Time ) . '{yellow} seconds' ) );
+
 			echo PHP_EOL;
 		}
 		while( BossSleep( $c ) );
@@ -340,26 +342,6 @@ do
 	// Rescan planets if joining failed
 	if( empty( $Zone[ 'response' ][ 'zone_info' ] ) )
 	{
-		// Bug
-		if( isset( $BestPlanetAndZone[ 'best_zone' ][ 'difficulty' ] ) )
-		{
-			Msg( '{lightred} ----- Bug: Start -----' );
-			$stillBug = true;
-			do {
-				Msg( '{lightred} ----- Bug: Report Score -----' );
-				$Data = SendPOST( 'ITerritoryControlMinigameService/ReportScore', 'access_token=' . $Token . '&score=' . GetScoreForZone( $BestPlanetAndZone[ 'best_zone' ][ 'difficulty' ] ) . '&language=english' );
-				if( empty( $Data[ 'response' ][ 'new_score' ] ) )
-				{
-					$stillBug = false;
-					Msg( '{lightred} ----- Bug: Report Fail! Exit -----' );
-				} else {
-					Msg( '{lightred} ----- Bug: Report Success! New Score: ' . $Data[ 'response' ][ 'new_score' ] . ' -----' );
-				}
-			}
-			while( $stillBug );
-		}
-		// Bug
-		
 		Msg( '{lightred}!! Failed to join a zone, rescanning and restarting...' );
 
 		$BestPlanetAndZone = 0;
@@ -593,6 +575,7 @@ function GetPlanetState( $Planet, $RandomizeZone, $WaitTime )
 	$MediumZones = 0;
 	$LowZones = 0;
 	$BossZones = [];
+	$HalfZones = [];
 
 	foreach( $Zones as &$Zone )
 	{
@@ -615,6 +598,12 @@ function GetPlanetState( $Planet, $RandomizeZone, $WaitTime )
 		if( $Zone[ 'type' ] == 4 && $Zone[ 'boss_active' ] )
 		{
 			$BossZones[] = $Zone;
+		}
+		// It appears that bosses like to spawn when a random zone gets over 50% capture progress
+		// So we will target fresh zones to bring them up to speed
+		else if( $Zone[ 'capture_progress' ] < 0.45 )
+		{
+			$HalfZones[] = $Zone;
 		}
 
 		$Cutoff = ( $Zone[ 'difficulty' ] < 2 && !$RandomizeZone ) ? 0.90 : 0.99;
@@ -641,6 +630,7 @@ function GetPlanetState( $Planet, $RandomizeZone, $WaitTime )
 	if( !empty( $BossZones ) )
 	{
 		$CleanZones = $BossZones;
+		goto bossLabel;
 	}
 	else if( count( $CleanZones ) < 2 )
 	{
@@ -649,6 +639,11 @@ function GetPlanetState( $Planet, $RandomizeZone, $WaitTime )
 
 	if( $RandomizeZone )
 	{
+		if( count( $HalfZones ) > 3 )
+		{
+			$CleanZones = $HalfZones;
+		}
+
 		shuffle( $CleanZones );
 	}
 	else
@@ -669,6 +664,7 @@ function GetPlanetState( $Planet, $RandomizeZone, $WaitTime )
 		} );
 	}
 
+bossLabel:
 	return [
 		'high_zones' => $HighZones,
 		'medium_zones' => $MediumZones,
