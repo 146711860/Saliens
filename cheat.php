@@ -342,6 +342,26 @@ do
 	// Rescan planets if joining failed
 	if( empty( $Zone[ 'response' ][ 'zone_info' ] ) )
 	{
+		// Bug
+		if( isset( $BestPlanetAndZone[ 'best_zone' ][ 'difficulty' ] ) )
+		{
+			Msg( '{lightred} ----- Bug: Start -----' );
+			$stillBug = true;
+			do {
+				Msg( '{lightred} ----- Bug: Report Score -----' );
+				$Data = SendPOST( 'ITerritoryControlMinigameService/ReportScore', 'access_token=' . $Token . '&score=' . GetScoreForZone( $BestPlanetAndZone[ 'best_zone' ][ 'difficulty' ] ) . '&language=english' );
+				if( empty( $Data[ 'response' ][ 'new_score' ] ) )
+				{
+					$stillBug = false;
+					Msg( '{lightred} ----- Bug: Report Fail! Exit -----' );
+				} else {
+					Msg( '{lightred} ----- Bug: Report Success! New Score: ' . $Data[ 'response' ][ 'new_score' ] . ' -----' );
+				}
+			}
+			while( $stillBug );
+		}
+		// Bug
+		
 		Msg( '{lightred}!! Failed to join a zone, rescanning and restarting...' );
 
 		$BestPlanetAndZone = 0;
