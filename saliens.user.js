@@ -19,7 +19,7 @@
 
 	$J('head').append('<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css"><link rel="stylesheet" href="https://cdn.datatables.net/1.10.18/css/dataTables.bootstrap.min.css">');
 
-	var time = 300;
+	var time = 120;
 	var timer = null;
 	var planetsZones = [];
 	var planetsState = [];
@@ -54,7 +54,10 @@
 
 	var mainContent =
 		'<div style="position: absolute; top: 0; right: 0; z-index: 999;">' +
-			'<button type="button" id="dataTableButton" class="btn btn-default btn-lg">' +
+			'<button type="button" id="refreshButton" class="btn btn-default btn-lg" style="margin-right: 5px;">' +
+				'<span class="glyphicon glyphicon-refresh" aria-hidden="true"></span>' +
+			'</button>' +
+			'<button type="button" id="showButton" class="btn btn-default btn-lg">' +
 				'<span class="glyphicon glyphicon-th-list" aria-hidden="true"></span>' +
 			'</button>' +
 		'</div>' +
@@ -95,6 +98,7 @@
 							'<td>Captured</td>' +
 							'<td>Difficulty</td>' +
 							'<td>Priority</td>' +
+							'<td>Boss Is Active</td>'
 						'</tr>' +
 					'</thead>' +
 				'</table>' +
@@ -111,7 +115,15 @@
 		'background-color': '#FFF'
 	}).html(mainContent).appendTo('body');
 
-	$J('#dataTableButton').click(function() {
+	$J('#refreshButton').click(function() {
+		clearInterval(timer);
+		timer = null;
+		time = 120;
+
+		getPlanetsData();
+	});
+
+	$J('#showButton').click(function() {
 		if($J('#dataTableContainer').is(':visible')) {
 			$J('#dataTableContainer').hide();
 		} else {
@@ -119,10 +131,10 @@
 		}
 	});
 
-	var dataTable = $J('#planetsDataTable').DataTable({
+	var planetsDataTable = $J('#planetsDataTable').DataTable({
 		dom: 'rt',
 		paging: false,
-		order: [[1, 'asc']],
+		order: [[15, 'desc'], [1, 'asc']],
 		scrollX: true,
 		columns: [
 			{
@@ -138,7 +150,15 @@
 			},
 			{
 				targets: 2,
-				data: 'name'
+				data: function(row, type) {
+					var activeBossZones = row.bossZones.filter(function(z) { return z.boss_active && !z.captured; }).map(function(z) { return z.zone_position; });
+
+					if(activeBossZones.length > 0) {
+						return row.name + ' (' + activeBossZones.join(', ') + ')';
+					}
+
+					return row.name;
+				}
 			},
 			{
 				targets: 3,
@@ -225,11 +245,20 @@
 			{
 				targets: 14,
 				data: 'priority'
+			},
+			{
+				targets: 15,
+				data: 'bossIsActive',
+				visible: false
 			}
 		],
 		createdRow: function(row, data, index) {
-			if(data.unknownZones > 0) {
-				$J('td', row).eq(1).css({
+			if(data.bossIsActive) {
+				$J('td', row).css('background-color', 'lightblue');
+			}
+
+			if(data.bossZones.length > 0) {
+				$J('td', row).eq(2).css({
 					'color': 'red',
 					'font-weight': 'bold'
 				});
@@ -254,22 +283,22 @@
 			}
 
 			if(data.active) {
-				$J('td', row).eq(11).css('background-color', 'green');
+				$J('td', row).eq(11).css('background-color', 'lightgreen');
 			} else {
-				$J('td', row).eq(11).css('background-color', 'red');
+				$J('td', row).eq(11).css('background-color', 'lightcoral');
 			}
 
 			if(data.captured) {
-				$J('td', row).eq(12).css('background-color', 'red');
+				$J('td', row).eq(12).css('background-color', 'lightcoral');
 			} else {
-				$J('td', row).eq(12).css('background-color', 'green');
+				$J('td', row).eq(12).css('background-color', 'lightgreen');
 			}
 		}
 	});
 
 	$J('#planetsDataTable tbody').on('click', 'td.planetDetail', function() {
 		var tr = $J(this).closest('tr');
-		var row = dataTable.row(tr);
+		var row = planetsDataTable.row(tr);
 
 		if(row.child.isShown()) {
 			$J(this).html('<span class="glyphicon glyphicon-zoom-in" aria-hidden="true" style="cursor: pointer;"></span>');
@@ -287,35 +316,34 @@
 			$J('#zonesDataTable_' + rowId).DataTable({
 				dom: 'rt',
 				paging: false,
+				order: [[3, 'desc']],
 				scrollY: '400px',
 				scrollCollapse: true,
 				columnDefs: [
 					{
-						targets: 4,
+						targets: 6,
 						render: function(data, type, row) {
 							return (data * 100).toFixed(2) + '%';
 						}
 					}
 				],
 				createdRow: function(row, data, index) {
-					if(data[1] < 1 || data[1] > 3) {
-						$J('td', row).eq(1).css({
-							'color': 'red',
-							'font-weight': 'bold'
+					if(data[2] < 1 || data[2] > 3 || data[3] != 3) {
+						$J('td', row).css({
+							'background-color': 'lightblue'
 						});
 					}
 
-					if(data[2] != 3) {
-						$J('td', row).eq(2).css({
-							'color': 'red',
-							'font-weight': 'bold'
-						});
-					}
-
-					if(data[3] == 'true') {
-						$J('td', row).eq(3).css('background-color', 'red');
+					if(data[4] == 'true') {
+						$J('td', row).eq(4).css('background-color', 'lightgreen');
 					} else {
-						$J('td', row).eq(3).css('background-color', 'green');
+						$J('td', row).eq(4).css('background-color', 'lightcoral');
+					}
+
+					if(data[5] == 'true') {
+						$J('td', row).eq(5).css('background-color', 'lightcoral');
+					} else {
+						$J('td', row).eq(5).css('background-color', 'lightgreen');
 					}
 				}
 			});
@@ -327,8 +355,10 @@
 			'<thead>' +
 				'<tr>' +
 					'<td>Zone Position</td>' +
+					'<td>Game ID</td/>' +
 					'<td>Difficulty</td>' +
 					'<td>Type</td>' +
+					'<td>Boss Active</td>' +
 					'<td>Captured</td>' +
 					'<td>Capture Progress</td>' +
 				'</tr>' +
@@ -338,11 +368,13 @@
 		for(var i = 0; i < d.length; i++) {
 			detailTable += '<tr>' +
 				'<td>' + d[i].zone_position + '</td>' +
+				'<td>' + d[i].gameid + '</td>' +
 				'<td>' + d[i].difficulty + '</td>' +
 				'<td>' + d[i].type + '</td>' +
+				'<td>' + d[i].boss_active + '</td>' +
 				'<td>' + d[i].captured + '</td>' +
 				'<td>' + (d[i].capture_progress || 0) + '</td>' +
-				'</tr>';
+			'</tr>';
 		}
 
 		detailTable += '</tbody></table>';
@@ -364,6 +396,7 @@
 			$J('#gameVersion').html(result.response.game_version);
 
 			var totalPlanets = result.response.planets.length;
+			var requestDone = 0;
 
 			for(var i = 0; i < totalPlanets; i++) {
 				$J.ajax({
@@ -373,6 +406,8 @@
 						id: result.response.planets[i].id,
 						language: 'tchinese'
 					}
+				}).always(function() {
+					requestDone++;
 				}).done(function(result) {
 					var planet = result.response.planets[0];
 					var state = planet.state;
@@ -382,7 +417,8 @@
 					var mediumZones = zones.filter(function(z) { return z.difficulty == 2; });
 					var highZones = zones.filter(function(z) { return z.difficulty == 3; });
 
-					var unknownZones = zones.filter(function(z) { return z.difficulty < 1 || z.difficulty > 3 || z.type != 3 });
+					var bossZones = zones.filter(function(z) { return z.type == 4; });
+					var bossIsActive = bossZones.filter(function(z) { return z.boss_active; });
 
 					planetsZones[planet.id] = zones;
 
@@ -405,12 +441,13 @@
 						captureProgress: state.capture_progress || 0,
 						activationTime: state.activation_time || 0,
 						captureTime: state.capture_time || 0,
-						unknownZones: unknownZones
+						bossZones: bossZones,
+						bossIsActive: bossIsActive.length > 0 ? true : false
 					});
 
-					if(planetsState.length == totalPlanets) {
-						dataTable.clear().draw();
-						dataTable.rows.add(planetsState).draw();
+					if(requestDone == totalPlanets) {
+						planetsDataTable.clear().draw();
+						planetsDataTable.rows.add(planetsState).draw();
 
 						getPlayerInfo();
 
@@ -425,14 +462,12 @@
 							if(--time < 0) {
 								clearInterval(timer);
 								timer = null;
-								time = 300;
+								time = 120;
 
 								getPlanetsData();
 							}
 						}, 1000);
 					}
-				}).always(function() {
-
 				});
 			}
 		});
@@ -447,27 +482,36 @@
 			}
 		}).done(function(result) {
 			var activePlanet = result.response.active_planet;
-			var activeZonePosition = result.response.active_zone_position || '-';
+			var activeZonePosition = result.response.active_zone_position;
+			var activeBossGame = result.response.active_boss_game;
 			var level = result.response.level;
 
+			var zoneInfo = activeBossGame ? 'BOSS (' + activeBossGame +')' : activeZonePosition ? activeZonePosition : '-';
+
 			var score = result.response.score;
-			var nextLevelScore = result.response.next_level_score;
-			var scorePercentage = 0;
+			var nextLevelScore = result.response.next_level_score || 0;
+			var scoreInfo = score;
 
-			if(scoreTable[level - 1]) {
-				scorePercentage = ((score - scoreTable[level - 1]) / (nextLevelScore - scoreTable[level - 1])) * 100;
-			}
+			if(nextLevelScore > 0) {
+				var scorePercentage = 0;
 
-			var levelUpEta = '';
-			if(activeZonePosition != '-') {
-				var zoneDifficulty = planetsZones[activePlanet][activeZonePosition].difficulty;
-				var zoneMaxScoreIndex = zoneDifficulty == 1 ? 5 : zoneDifficulty == 2 ? 10 : zoneDifficulty == 3 ? 20 : 0;
-				var zoneMaxScore = zoneMaxScoreIndex * 120;
+				if(scoreTable[level - 1]) {
+					scorePercentage = ((score - scoreTable[level - 1]) / (nextLevelScore - scoreTable[level - 1])) * 100;
+				}
 
-				var levelUpEtaTime = (nextLevelScore - score) / zoneMaxScore * (110 / 60);
-				var levelUpEtaHour = Math.floor(levelUpEtaTime / 60);
-				var levelUpEtaMinute = Math.floor(levelUpEtaTime % 60);
-				levelUpEta = ' (ETA: ' + levelUpEtaHour + 'h ' + levelUpEtaMinute + 'm) ';
+				var levelUpEta = '';
+				if(activeZonePosition != '-') {
+					var zoneDifficulty = planetsZones[activePlanet][activeZonePosition].difficulty;
+					var zoneMaxScoreIndex = zoneDifficulty == 1 ? 5 : zoneDifficulty == 2 ? 10 : zoneDifficulty == 3 ? 20 : 0;
+					var zoneMaxScore = zoneMaxScoreIndex * 120;
+
+					var levelUpEtaTime = (nextLevelScore - score) / zoneMaxScore * (110 / 60);
+					var levelUpEtaHour = Math.floor(levelUpEtaTime / 60);
+					var levelUpEtaMinute = Math.floor(levelUpEtaTime % 60);
+					levelUpEta = ' (ETA: ' + levelUpEtaHour + 'h ' + levelUpEtaMinute + 'm) ';
+				}
+
+				scoreInfo += '/' + nextLevelScore + ' (' + scorePercentage.toFixed(2) + '%) ' + levelUpEta;
 			}
 
 			var timeOnPlanetSec = parseInt(result.response.time_on_planet);
@@ -476,7 +520,7 @@
 			var timeOnPlanetSecond = ('0' + (timeOnPlanetSec % 60)).slice(-2);
 			var timeOnPlanet = timeOnPlanetHour + ':' + timeOnPlanetMinute + ':' + timeOnPlanetSecond;
 
-			$J('#playerInfo').html('Planet: ' + activePlanet + ' | Zone: ' + activeZonePosition + ' | Level: ' + level + ' | Exp: ' + score + '/' + nextLevelScore + ' (' + scorePercentage.toFixed(2) + '%) ' + levelUpEta + ' | Time on planet: ' + timeOnPlanet);
+			$J('#playerInfo').html('Planet: ' + activePlanet + ' | Zone: ' + zoneInfo + ' | Level: ' + level + ' | Exp: ' + scoreInfo + ' | Time on planet: ' + timeOnPlanet);
 
 			var now = new Date();
 			var year = now.getFullYear();
